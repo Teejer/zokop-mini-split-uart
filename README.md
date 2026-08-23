@@ -6,6 +6,8 @@ Replace the Tuya WiFi module in a Zokop 12000 BTU mini split with a Raspberry Pi
 
 The indoor unit of the Zokop mini split contains a small Tuya WiFi module that talks to the AC's main control board over a 4-wire harness: 5 V, GND, TX, and RX. The data is a Tuya-style UART protocol at 115200 baud, made up of frames containing data points (DPs) for power, temperature, mode, fan, and louvers.
 
+Since this is a generic Tuya UART protocol, the same approach — and much of this code — will probably work with other Tuya-based mini splits. Expect some variation between units: wire colors, available DP values, and the exact captured frames may differ, so verify the wiring and re-capture frames if your unit behaves differently.
+
 Instead of letting the Tuya module handle the radio, this project:
 
 - **`ac_bridge.py`** — the main bridge. Opens the serial port, publishes AC state to MQTT, accepts commands from MQTT, and auto-publishes Home Assistant MQTT discovery.
