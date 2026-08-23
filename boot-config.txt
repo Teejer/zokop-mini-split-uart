@@ -1,8 +1,8 @@
 # ── Clock & voltage ──────────────────────────────────────────────
 arm_freq=600
 core_freq=200
-over_voltage=-1
-over_voltage_min=-1
+over_voltage=-3
+over_voltage_min=-3
 temp_limit=65
 
 # ── Disable unused peripherals ───────────────────────────────────
