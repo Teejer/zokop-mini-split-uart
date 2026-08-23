@@ -20,7 +20,7 @@ Instead of letting the Tuya module handle the radio, this project:
 | Part | Notes |
 |------|-------|
 | Raspberry Pi Zero 2W | Any small Pi works; the Zero 2W tucks easily into the indoor unit |
-| USB-to-TTL serial adapter | FTDI, CP2102, or CH340 — 115200 baud, 8N1. It must operate at 5 V levels, since the AC board's UART is 5 V (this build's adapter does so without any VCC connection) |
+| USB-to-TTL serial adapter | FTDI, CP2102, or CH340 — 115200 baud, 8N1. It must operate at 5 V levels, since the AC board's UART is 5 V — this build's adapter has a 3.3 V/5 V I/O jumper, set to 5 V |
 | Dupont wires + connectors | Terminate the soldered harness leads |
 | Hook-up wire + soldering iron | The harness connector wouldn't unplug, so it was cut and re-terminated |
 | Hi-Link HLK-PM01 (or similar) AC-DC module | Taps the 120 V line feeding the indoor unit and converts it to 5 V to power the Pi (the USB-TTL adapter draws its power from the Pi's USB port) |
@@ -51,7 +51,7 @@ Instead of letting the Tuya module handle the radio, this project:
    | RX | Red wire (board TX) — soldered dupont lead |
    | GND | White wire (GND) — soldered dupont lead |
 
-   Common ground is mandatory. Never try to power the AC board from the USB adapter. The adapter is plugged into the Pi's USB port and draws its power from there — nothing is wired to its VCC, and the harness's yellow 5 V wire is unused. If your adapter or MCU is 3.3 V-only, insert a level shifter between it and the harness (see the note above).
+   Common ground is mandatory. Never try to power the AC board from the USB adapter. The adapter is plugged into the Pi's USB port and draws its power from there; its 3.3 V/5 V I/O jumper is set to 5 V, and nothing is wired to its VCC pin. The harness's yellow 5 V wire is unused. If your adapter or MCU is 3.3 V-only, insert a level shifter between it and the harness (see the note above).
 5. **Mount everything and wire the power.** Tuck the HLK-PM01 into the cavity where the 120 V line enters the unit — its AC input is tapped into that line (hot + neutral). Hot glue the Pi Zero 2W and the USB-TTL adapter to the housing where the original Tuya module sat. Route the HLK-PM01's 5 V output to the Pi's header pins 4 (5 V) and 6 (GND) — the USB-TTL adapter draws its power from the Pi's USB port, and the yellow 5 V harness wire is not used. Since the module is primary-side isolated, tie its GND output to the harness GND (white wire) so the Pi, USB adapter, and AC board all share a common ground. This is a live 120 V connection — use proper insulation/wire nuts, and pick a module whose current rating covers the peaks of the Pi and adapter (WiFi bursts alone can draw over 1 A).
 6. **Restore power.** The AC keeps running without the WiFi module, and on most units the IR remote still works because it talks directly to the main board — so you aren't bricked if the bridge misbehaves.
 
