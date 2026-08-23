@@ -20,10 +20,11 @@ Instead of letting the Tuya module handle the radio, this project:
 | Part | Notes |
 |------|-------|
 | Raspberry Pi Zero 2W | Any small Pi works; the Zero 2W tucks easily into the indoor unit |
-| USB-to-TTL serial adapter | FTDI, CP2102, or CH340 — 115200 baud, 8N1 |
-| 5 V ↔ 3.3 V level shifter | The AC board speaks 5 V UART; the adapter is 3.3 V. A bidirectional MOSFET level-shifter module (e.g. BSS138-based) works for both lines, or a 74AHCT125 for TX only — see `info.txt` |
+| USB-to-TTL serial adapter | FTDI, CP2102, or CH340 — 115200 baud, 8N1. It must output 5 V levels, since the AC board's UART is 5 V (set the adapter's VCC to 5 V) |
 | Dupont wires | |
 | 5 V PSU for the Pi | ~2.5 A wall wart; the AC's 5 V rail usually can't supply the Pi |
+
+> **Level shifter?** Not needed with a 5 V USB-TTL adapter. If you adapt this project to a 3.3 V-only MCU (ESP32, Raspberry Pi GPIO, …) you'll need a 5 V ↔ 3.3 V level shifter — a 74AHCT125 for TX, or a bidirectional MOSFET module (e.g. BSS138-based) for both lines. Wiring details are in `info.txt`.
 
 ## 1. Replacing the Tuya WiFi module
 
@@ -35,22 +36,22 @@ Instead of letting the Tuya module handle the radio, this project:
 
    | Wire | Signal | Purpose |
    |------|--------|---------|
-   | Yellow | 5 V | Powered the Tuya module; also VCC for the level shifter |
+   | Yellow | 5 V | Powered the Tuya module; also VCC for the USB-TTL adapter |
    | White | GND | Common ground |
    | Black | Module → Board | Board's RX input — this is where you send commands |
    | Red | Board → Module | Board's TX output — this is where you receive state |
 
    Sanity check: yellow/white should measure ~5 V DC between them, and the remaining two wires are the data lines.
-4. **Wire through the level shifter.** 3.3 V side to the USB-TTL adapter, 5 V side to the harness:
+4. **Wire the harness to the adapter** (5 V side):
 
-   | Adapter pin | Via | Harness wire |
-   |-------------|-----|--------------|
-   | TX | level shifter | Black (board RX) |
-   | RX | level shifter | Red (board TX) |
-   | GND | direct | White (GND) |
-   | VCC (5 V) | direct | Yellow (5 V) |
+   | Adapter pin | Harness wire |
+   |-------------|--------------|
+   | TX | Black (board RX) |
+   | RX | Red (board TX) |
+   | GND | White (GND) |
+   | VCC (5 V) | Yellow (5 V) |
 
-   Common ground is mandatory. Never try to power the AC board from the USB adapter.
+   Common ground is mandatory. Never try to power the AC board from the USB adapter. If your adapter or MCU is 3.3 V-only, insert a level shifter between it and the harness (see the note above).
 5. **Mount the Pi.** Tuck the Pi Zero 2W and the USB-TTL adapter into the cavity behind the panel, or in a small project box nearby. Power the Pi from its own 5 V PSU; only share GND with the AC wiring.
 6. **Restore power.** The AC keeps running without the WiFi module, and on most units the IR remote still works because it talks directly to the main board — so you aren't bricked if the bridge misbehaves.
 
@@ -83,7 +84,7 @@ Instead of letting the Tuya module handle the radio, this project:
 
    You should see `TX power_on: ...` followed by an `RX` frame, and the AC should start. Try `--command power_off`, `--temp 78`, `--command fan_high`. `python3 ac_control.py --list` shows all named commands.
 
-   No RX data or no response from the AC? Re-check TX/RX direction (adapter TX → black wire), the common ground, and the level shifter.
+   No RX data or no response from the AC? Re-check TX/RX direction (adapter TX → black wire) and the common ground.
 5. **Run the bridge:**
 
    ```bash
