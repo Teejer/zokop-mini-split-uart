@@ -189,3 +189,7 @@ A5 01 01 21 <seq> 00 00 <len> <crc16-hi> <crc16-lo> <payload...>
 - Mode commands replay the full captured multi-DP frames as-is, since the board expects the complete packet; all other commands are generated as single-DP frames with a fresh CRC.
 - If your unit's wire colors differ, identify them with a multimeter (5 V / GND first) before wiring anything.
 - Opening the indoor unit may affect your warranty.
+
+## Credits
+
+The protocol reverse engineering and bridge code for this project were created with the help of Qwen3.8 27B and DeepSeek V4 Flash, both running locally.
