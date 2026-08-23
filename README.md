@@ -1,4 +1,4 @@
-# Zokop Mini Split UART → MQTT Bridge
+# Zokop/Tuya Mini Split UART → MQTT Bridge
 
 Replace the Tuya WiFi module in a Zokop 12000 BTU mini split with a Raspberry Pi Zero 2W and a USB-to-TTL serial adapter, giving you full control of the AC over MQTT with native Home Assistant integration.
 
