@@ -154,7 +154,11 @@ You can also pass an alternate config file as an argument: `python3 ac_bridge.py
 
 `boot-config.txt` and `apply-low-power.sh` tune a headless Pi Zero 2W for minimal draw: undervolting (`arm_freq=600`, `over_voltage=-1`), disabling BT/I2C/SPI/audio/camera, blacklisting unused kernel modules, and stopping unneeded services (bluetooth, avahi, cups, …).
 
-1. Replace or merge `boot-config.txt` into `/boot/firmware/config.txt`.
+1. Copy `boot-config.txt` to `/boot/firmware/config.txt` (replacing or merging with the existing file):
+
+   ```bash
+   sudo cp boot-config.txt /boot/firmware/config.txt
+   ```
 2. `sudo bash apply-low-power.sh`, then reboot.
 
 ## Protocol reference
