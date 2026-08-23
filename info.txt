@@ -1,0 +1,176 @@
+python3-serial
+sudo apt install python3-paho-mqtt
+
+
+Here’s how to wire a 74AHCT125 as a 3.3V‑to‑5V UART level shifter for your TX line. This chip is much more robust than the BSS138 module and should fix the problem.
+
+74AHCT125 Pinout
+The 74AHCT125 has four independent buffers with active‑low enables. You only need one for TX, but the chip is cheap and you can leave the other inputs grounded.
+
+Pins (for a DIP‑14 or SOIC‑14):
+
+┌───┬───┐
+   1OE  │1  │14 │ VCC
+    1A  │2  │13 │ 4OE
+    1Y  │3  │12 │ 4A
+    2Y  │4  │11 │ 4Y
+    2A  │5  │10 │ 3OE
+    2OE │6  │ 9 │ 3A
+   GND  │7  │ 8 │ 3Y
+        └───┴───┘
+1A (pin 2) = input (3.3V from ESP32)
+1Y (pin 3) = output (5V to AC board)
+1OE (pin 1) = output enable – tie to GND (always enabled)
+VCC (pin 14) = 5V
+GND (pin 7) = common ground
+Wiring for your TX line
+Connect:
+
+74AHCT125 Pin	Connect to
+Pin 14 (VCC)	5V (yellow wire from AC harness, or a 5V source)
+Pin 7 (GND)	GND (white wire from AC harness + ESP32 GND)
+Pin 1 (1OE)	GND (to enable buffer)
+Pin 2 (1A)	ESP32 GPIO21 (UART TX) – 3.3V signal
+Pin 3 (1Y)	Black wire (AC board RX) – now 5V signal
+Pin 4, 5, 6 (2Y, 2A, 2OE)	Leave floating or tie unused inputs to GND
+Pins 8–13	Leave floating or tie unused inputs to GND
+No other connections needed. The 74AHCT125 output is a strong 5V TTL signal, well within the AC board’s UART specs.
+
+What about RX (AC → ESP32)?
+Option 1: Keep your existing level shifter for RX.
+If you’re still receiving broadcasts fine through the BSS138 module, you can leave it for RX and just use the 74AHCT125 for TX. This is simplest.
+
+Option 2: Use a voltage divider for RX (no level shifter).
+Connect the red wire (AC TX) directly to a resistor divider:
+
+AC red (5V) --- 1kΩ ---+--- 2kΩ --- GND
+                        |
+                     ESP32 GPIO20 (RX)
+The 2kΩ to GND goes to ground; the junction gives about 3.3V. Use resistors between 1k–10k; this works fine at 115200 baud.
+
+Important notes
+Do not tie 1OE to VCC – that disables the output.
+Common ground is mandatory: ESP32 GND, 74AHCT125 GND, AC GND all tied together.
+The 74AHCT125 is unidirectional, so you can’t use it for both TX and RX. That’s why we keep the level shifter for RX or use a divider.
+The AC board’s black wire idle voltage is ~5V; the 74AHCT125 output will also be ~5V high when idle, so level matching is correct.
+Testing after wiring
+Reconnect everything.
+In ESPHome, send power_on.
+If the AC turns on, you’re done.
+You can also watch the logs – you should now see a 0x23 ACK or a state frame with 00 01 01 after your command.
+
+Let me know if you need help selecting the divider resistors or if you want a diagram using a 74LVC245 for both TX and RX in one chip.
+
+
+
+
+
+
+
+PAYLOADS = {
+    # Power
+    "power_on": bytes.fromhex("a5 01 01 21 09 00 00 12 be b6 0a 0a 00 01 01 00 13 00"),
+    "power_off": bytes.fromhex("a5 01 01 21 0a 00 00 0f 62 dd 0a 0a 00 01 00"),
+
+    # Mode
+    "mode_auto": bytes.fromhex("a5 01 01 21 0e 00 00 24 a7 eb 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 00 00 05 02 00 73 00 00 13 00"),
+    "mode_cool": bytes.fromhex("a5 01 01 21 0f 00 00 24 d7 e6 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 01 00 05 00 00 73 01 00 13 00"),
+    "mode_dry": bytes.fromhex("a5 01 01 21 10 00 00 24 96 2b 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 02 00 05 02 00 73 00 00 13 00"),
+    "mode_fan": bytes.fromhex("a5 01 01 21 11 00 00 24 f0 71 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 03 00 05 02 00 73 00 00 13 00"),
+    "mode_heat": bytes.fromhex("a5 01 01 21 12 00 00 24 ee ee 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 04 00 05 05 00 73 00 00 13 00"),
+
+    # Fan speed
+    "fan_auto": bytes.fromhex("a5 01 01 21 16 00 00 12 7e bc 0a 0a 00 05 00 00 73 01"),
+    "fan_mute": bytes.fromhex("a5 01 01 21 17 00 00 12 1b 5c 0a 0a 00 05 01 00 73 00"),
+    "fan_low": bytes.fromhex("a5 01 01 21 18 00 00 12 93 63 0a 0a 00 05 02 00 73 00"),
+    "fan_mid_low": bytes.fromhex("a5 01 01 21 19 00 00 12 e6 a2 0a 0a 00 05 03 00 73 00"),
+    "fan_mid": bytes.fromhex("a5 01 01 21 1a 00 00 12 b2 10 0a 0a 00 05 04 00 73 00"),
+    "fan_mid_high": bytes.fromhex("a5 01 01 21 1b 00 00 12 c7 d1 0a 0a 00 05 05 00 73 00"),
+    "fan_high": bytes.fromhex("a5 01 01 21 1c 00 00 12 54 46 0a 0a 00 05 06 00 73 00"),
+    "fan_extra_high": bytes.fromhex("a5 01 01 21 1d 00 00 15 4d cf 0a 0a 00 26 00 00 05 07 00 73 00"),
+
+    # Horizontal / left-right louver
+    "louver_h_left_right_flow": bytes.fromhex("a5 01 01 21 38 00 00 0f 50 a7 0a 0a 00 0e 01"),
+    "louver_h_left_flow": bytes.fromhex("a5 01 01 21 39 00 00 0f 8b e7 0a 0a 00 0e 02"),
+    "louver_h_middle_flow": bytes.fromhex("a5 01 01 21 3a 00 00 0f b6 82 0a 0a 00 0e 03"),
+    "louver_h_right_flow": bytes.fromhex("a5 01 01 21 3b 00 00 0f 2d 46 0a 0a 00 0e 04"),
+    "louver_h_left_fix": bytes.fromhex("a5 01 01 21 3c 00 00 0f 4d 40 0a 0a 00 0e 09"),
+    "louver_h_bit_left_fix": bytes.fromhex("a5 01 01 21 3d 00 00 0f 96 00 0a 0a 00 0e 0a"),
+    "louver_h_middle_fix": bytes.fromhex("a5 01 01 21 3e 00 00 0f ab 65 0a 0a 00 0e 0b"),
+    "louver_h_bit_right_fix": bytes.fromhex("a5 01 01 21 3f 00 00 0f 30 a1 0a 0a 00 0e 0c"),
+    "louver_h_right_fix": bytes.fromhex("a5 01 01 21 40 00 00 0f 13 0f 0a 0a 00 0e 0d"),
+
+    # Vertical / up-down louver
+    "louver_v_up_down_flow": bytes.fromhex("a5 01 01 21 43 00 00 0f ec 8a 0a 0a 00 11 01"),
+    "louver_v_up_flow": bytes.fromhex("a5 01 01 21 44 00 00 0f 6d 42 0a 0a 00 11 02"),
+    "louver_v_down_flow": bytes.fromhex("a5 01 01 21 45 00 00 0f 96 40 0a 0a 00 11 03"),
+    "louver_v_up_fix": bytes.fromhex("a5 01 01 21 46 00 00 0f 1a 4e 0a 0a 00 11 09"),
+    "louver_v_above_up_fix": bytes.fromhex("a5 01 01 21 47 00 00 0f c1 0e 0a 0a 00 11 0a"),
+    "louver_v_middle_fix": bytes.fromhex("a5 01 01 21 48 00 00 0f 49 7b 0a 0a 00 11 0b"),
+    "louver_v_above_down_fix": bytes.fromhex("a5 01 01 21 49 00 00 0f d2 bf 0a 0a 00 11 0c"),
+    "louver_v_down_fix": bytes.fromhex("a5 01 01 21 4a 00 00 0f ef da 0a 0a 00 11 0d"),
+
+    # Sleep mode
+    "sleep_standard": bytes.fromhex("a5 01 01 21 50 00 00 0f c2 f6 0a 0a 00 22 01"),
+    "sleep_aged": bytes.fromhex("a5 01 01 21 51 00 00 0f 19 b6 0a 0a 00 22 02"),
+    "sleep_child": bytes.fromhex("a5 01 01 21 52 00 00 0f 24 d3 0a 0a 00 22 03"),
+
+    # Beep
+    "beep_off": bytes.fromhex("a5 01 01 21 21 00 00 0f 0b b8 0a 0a 00 25 00"),
+    "beep_on": bytes.fromhex("a5 01 01 21 22 00 00 0f 36 dd 0a 0a 00 25 01"),
+
+    # Temperature
+    "temp_80": bytes.fromhex("a5 01 01 21 23 00 00 12 f9 44 0a 0a 02 27 00 00 00 50"),
+    "temp_79": bytes.fromhex("a5 01 01 21 24 00 00 12 12 d1 0a 0a 02 27 00 00 00 4f"),
+    "temp_78": bytes.fromhex("a5 01 01 21 25 00 00 12 01 85 0a 0a 02 27 00 00 00 4e"),
+}
+
+
+
+Usage examples
+List all supported named commands:
+
+python3 ac_control.py --list
+Send power on:
+
+python3 ac_control.py --port /dev/ttyUSB0 --command power_on
+Send a raw captured frame exactly as-is:
+
+python3 ac_control.py --port /dev/ttyUSB0 \
+  --hex "a5 01 01 21 09 00 00 12 be b6 0a 0a 00 01 01 00 13 00"
+Send a custom single-DP command, e.g. horizontal louver left flow (0x0E = 0x02):
+
+python3 ac_control.py --port /dev/ttyUSB0 \
+  --hex "$(python3 - <<'PY'
+from ac_control import make_state_frame, simple_dp
+print(make_state_frame(simple_dp(0x0e, 0x02), seq=0x50).hex(' ').upper())
+PY
+)"
+Or simply add your own custom payload in the script and run:
+
+python3 ac_control.py --port /dev/ttyUSB0 --command louver_h_left_flow
+Important wiring note
+In your capture, /dev/ttyUSB0 was labeled RX (module → board), meaning that line carries data from the WiFi module to the AC board.
+
+To send commands with this script, connect your USB-UART adapter’s TX to that same module→board signal line, and connect a common ground. Do not power the AC board from the USB adapter.
+
+A few things I noticed:
+
+The “LED display” capture you posted was identical to the fan-speed capture, so I did not include a standalone display_off / display_on command.
+The mode payloads I used include several extra DPs from your capture; they should reproduce the exact mode changes you recorded.
+If you want to experiment with minimal commands, use simple_dp(0x12, mode) for mode only, but I haven’t confirmed whether the board accepts a partial DP update. The full captured payloads are the safest.
+
+
+
+
+Set temperature to 78°F:
+
+python3 ac_control.py --port /dev/ttyUSB0 --temp 78
+Send a named command:
+
+python3 ac_control.py --port /dev/ttyUSB0 --command louver_h_left_flow
+Send a raw captured frame:
+
+python3 ac_control.py --port /dev/ttyUSB0 \
+  --hex "a5 01 01 21 25 00 00 12 01 85 0a 0a 02 27 00 00 00 4e"
+Just be sure to connect your UART adapter to the same module→board line you captured, and use a common ground.

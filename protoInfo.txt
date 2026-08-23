@@ -1,0 +1,175 @@
+I’ll give you the practical reverse-engineered map. I’m treating your RX as module → board and TX as board → module, as labelled in your capture.
+
+Quick frame anatomy
+For example:
+
+a5 01 01 21 38 00 00 0f 50 a7 0a 0a 00 0e 01
+a5 01 01 21 = protocol header / STATE command
+38 = sequence byte
+00 0f = length field: 15 bytes total
+50 a7 = 2-byte checksum/signature field
+0a 0a 00 0e 01 = actual DP payload: DP 0x0E, value 0x01
+So these are Tuya-style UART DP frames.
+
+The 0a 0a 00 ... packets are the module→board state commands.
+The 0c 0c 00 ... packets are board→module state reports/echoes.
+The 12-byte 0x23 frames are mostly ACK/status frames, not settings.
+
+DP map
+DP ID	Meaning	Observed values
+0x01	Power	00 = off, 01 = on
+0x05	Fan speed	00 auto, 01 mute, 02 low, 03 mid-low, 04 mid, 05 mid-high, 06 high, 07 extra-high
+0x0E	Horizontal louver / left-right	1,2,3,4 flow; 9,10,11,12,13 fixed positions
+0x11	Vertical louver / up-down	1,2,3 flow; 9,10,11,12,13 fixed positions
+0x12	Mode	00 auto, 01 cool, 02 dry, 03 fan, 04 heat
+0x22	Sleep mode	01 standard, 02 aged, 03 child
+0x25	Beep	00 off, 01 on
+0x73	Possibly LED/display	00 off / 01 on, but see note below
+Replay-ready captured commands
+These are the exact RX STATE frames from your captures.
+You can replay these bytes as module → board.
+
+Power
+ON:
+a5 01 01 21 09 00 00 12 be b6 0a 0a 00 01 01 00 13 00
+OFF:
+a5 01 01 21 0a 00 00 0f 62 dd 0a 0a 00 01 00
+Mode
+Mode is embedded in the longer 36-byte STATE packets. The changing byte is after ... 4f 00 12.
+
+AUTO:
+a5 01 01 21 0e 00 00 24 a7 eb 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 00 00 05 02 00 73 00 00 13 00
+COOL:
+a5 01 01 21 0f 00 00 24 d7 e6 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 01 00 05 00 00 73 01 00 13 00
+DRY:
+a5 01 01 21 10 00 00 24 96 2b 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 02 00 05 02 00 73 00 00 13 00
+FAN:
+a5 01 01 21 11 00 00 24 f0 71 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 03 00 05 02 00 73 00 00 13 00
+HEAT:
+a5 01 01 21 12 00 00 24 ee ee 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 04 00 05 05 00 73 00 00 13 00
+AUTO again:
+a5 01 01 21 13 00 00 24 53 80 0a 0a 00 02 00 00 0a 28 02 27 00 00 00 4f 00 12 00 00 05 02 00 73 00 00 13 00
+So mode values inside the packet:
+
+0x12 00 = auto
+0x12 01 = cool
+0x12 02 = dry
+0x12 03 = fan
+0x12 04 = heat
+Fan speed
+AUTO:
+a5 01 01 21 16 00 00 12 7e bc 0a 0a 00 05 00 00 73 01
+MUTE:
+a5 01 01 21 17 00 00 12 1b 5c 0a 0a 00 05 01 00 73 00
+LOW:
+a5 01 01 21 18 00 00 12 93 63 0a 0a 00 05 02 00 73 00
+MID-LOW:
+a5 01 01 21 19 00 00 12 e6 a2 0a 0a 00 05 03 00 73 00
+MID:
+a5 01 01 21 1a 00 00 12 b2 10 0a 0a 00 05 04 00 73 00
+MID-HIGH:
+a5 01 01 21 1b 00 00 12 c7 d1 0a 0a 00 05 05 00 73 00
+HIGH:
+a5 01 01 21 1c 00 00 12 54 46 0a 0a 00 05 06 00 73 00
+EXTRA-HIGH:
+a5 01 01 21 1d 00 00 15 4d cf 0a 0a 00 26 00 00 05 07 00 73 00
+AUTO again:
+a5 01 01 21 1e 00 00 12 65 14 0a 0a 00 05 00 00 73 01
+Horizontal louver / left-right
+DP 0x0E:
+
+LEFT-RIGHT FLOW:
+a5 01 01 21 38 00 00 0f 50 a7 0a 0a 00 0e 01
+LEFT FLOW:
+a5 01 01 21 39 00 00 0f 8b e7 0a 0a 00 0e 02
+MIDDLE FLOW:
+a5 01 01 21 3a 00 00 0f b6 82 0a 0a 00 0e 03
+RIGHT FLOW:
+a5 01 01 21 3b 00 00 0f 2d 46 0a 0a 00 0e 04
+LEFT FIX:
+a5 01 01 21 3c 00 00 0f 4d 40 0a 0a 00 0e 09
+A BIT LEFT FIX:
+a5 01 01 21 3d 00 00 0f 96 00 0a 0a 00 0e 0a
+MIDDLE FIX:
+a5 01 01 21 3e 00 00 0f ab 65 0a 0a 00 0e 0b
+A BIT RIGHT FIX:
+a5 01 01 21 3f 00 00 0f 30 a1 0a 0a 00 0e 0c
+RIGHT FIX:
+a5 01 01 21 40 00 00 0f 13 0f 0a 0a 00 0e 0d
+Vertical louver / up-down
+DP 0x11:
+
+UP-DOWN FLOW:
+a5 01 01 21 43 00 00 0f ec 8a 0a 0a 00 11 01
+UP FLOW:
+a5 01 01 21 44 00 00 0f 6d 42 0a 0a 00 11 02
+DOWN FLOW:
+a5 01 01 21 45 00 00 0f 96 40 0a 0a 00 11 03
+UP FIX:
+a5 01 01 21 46 00 00 0f 1a 4e 0a 0a 00 11 09
+ABOVE UP FIX:
+a5 01 01 21 47 00 00 0f c1 0e 0a 0a 00 11 0a
+MIDDLE FIX:
+a5 01 01 21 48 00 00 0f 49 7b 0a 0a 00 11 0b
+ABOVE DOWN FIX:
+a5 01 01 21 49 00 00 0f d2 bf 0a 0a 00 11 0c
+DOWN FIX:
+a5 01 01 21 4a 00 00 0f ef da 0a 0a 00 11 0d
+Sleep mode
+DP 0x22:
+
+STANDARD:
+a5 01 01 21 50 00 00 0f c2 f6 0a 0a 00 22 01
+AGED:
+a5 01 01 21 51 00 00 0f 19 b6 0a 0a 00 22 02
+CHILD:
+a5 01 01 21 52 00 00 0f 24 d3 0a 0a 00 22 03
+Repeated captures also showed standard/aged/child again as:
+
+a5 01 01 21 53 00 00 0f ef b2 0a 0a 00 22 01
+a5 01 01 21 54 00 00 0f 6e 7a 0a 0a 00 22 02
+a5 01 01 21 55 00 00 0f 95 78 0a 0a 00 22 03
+Beep
+DP 0x25:
+
+BEEP OFF:
+a5 01 01 21 21 00 00 0f 0b b8 0a 0a 00 25 00
+BEEP ON:
+a5 01 01 21 22 00 00 0f 36 dd 0a 0a 00 25 01
+LED / display
+Your “LED display” capture is identical to the fan-speed capture, so I can’t fully separate it. In that capture 0x73 toggles:
+
+73 01 when fan is in AUTO
+73 00 during manual fan speeds
+So 0x73 might be the LED/display DP, or it might be an “auto fan” flag. If it is the LED display DP:
+
+LED OFF:
+a5 01 01 21 17 00 00 12 1b 5c 0a 0a 00 05 01 00 73 00
+LED ON:
+a5 01 01 21 1e 00 00 12 65 14 0a 0a 00 05 00 00 73 01
+But those also change fan speed, so a dedicated LED capture would be needed to confirm.
+
+Checksum note
+The two bytes after the length field, e.g. 50 a7, are the checksum. They are not part of the DP data. If you change the sequence byte, the DP value, or the packet length, you must recompute those two bytes or the board will reject the frame.
+
+The captures above are complete valid frames, so you can replay them as-is without recalculating.
+
+
+
+The temperature DP is 0x27, and the value is just the Fahrenheit setpoint as a byte:
+
+0x50 = 80°F
+0x4F = 79°F
+0x4E = 78°F
+The relevant module→board captures are:
+
+80°F:
+a5 01 01 21 23 00 00 12 f9 44 0a 0a 02 27 00 00 00 50
+79°F:
+a5 01 01 21 24 00 00 12 12 d1 0a 0a 02 27 00 00 00 4f
+78°F:
+a5 01 01 21 25 00 00 12 01 85 0a 0a 02 27 00 00 00 4e
+So your script can generate temperature-setting frames dynamically:
+
+def temperature_payload(temp_f: int) -> bytes:
+    return bytes([0x0A, 0x0A, 0x02, 0x27, 0x00, 0x00, 0x00, temp_f & 0xFF])

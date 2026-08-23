@@ -1,0 +1,6 @@
+# Production config (contains credentials) — keep local only
+config.json
+
+# Python
+__pycache__/
+*.pyc

@@ -1,0 +1,12 @@
+[Unit]
+Description=AC MQTT Bridge for A5 UART Protocol
+After=network.target
+[Service]
+Type=simple
+User=teejer
+WorkingDirectory=/home/teejer/acMqtt
+ExecStart=/usr/bin/python3 /home/teejer/acMqtt/ac_bridge.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

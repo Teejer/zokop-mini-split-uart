@@ -1,0 +1,25 @@
+# ── Clock & voltage ──────────────────────────────────────────────
+arm_freq=600
+core_freq=200
+over_voltage=-1
+over_voltage_min=-1
+temp_limit=65
+
+# ── Disable unused peripherals ───────────────────────────────────
+dtparam=uart0=off
+dtparam=i2c0=off
+dtparam=i2c1=off
+dtparam=spi=off
+dtparam=audio=off
+dtparam=led0=off
+dtparam=led1=off
+dtoverlay=disable-bt
+camera_auto_detect=0
+
+# ── Keep ─────────────────────────────────────────────────────────
+# USB:  (default, on)
+# WiFi: (default, on — brcmfmac stays loaded)
+
+# ── Misc ─────────────────────────────────────────────────────────
+loglevel=1
+quiet
