@@ -22,7 +22,7 @@ Instead of letting the Tuya module handle the radio, this project:
 | Raspberry Pi Zero 2W | Any small Pi works; the Zero 2W tucks easily into the indoor unit |
 | USB-to-TTL serial adapter | FTDI, CP2102, or CH340 — 115200 baud, 8N1. It must output 5 V levels, since the AC board's UART is 5 V (set the adapter's VCC to 5 V) |
 | Dupont wires | |
-| 5 V PSU for the Pi | ~2.5 A wall wart; the AC's 5 V rail usually can't supply the Pi |
+| Hi-Link HLK-PM01 (or similar) AC-DC module | Taps the 120 V line feeding the indoor unit and converts it to 5 V to power the Pi |
 
 > **Level shifter?** Not needed with a 5 V USB-TTL adapter. If you adapt this project to a 3.3 V-only MCU (ESP32, Raspberry Pi GPIO, …) you'll need a 5 V ↔ 3.3 V level shifter — a 74AHCT125 for TX, or a bidirectional MOSFET module (e.g. BSS138-based) for both lines. Wiring details are in `info.txt`.
 
@@ -52,7 +52,7 @@ Instead of letting the Tuya module handle the radio, this project:
    | VCC (5 V) | Yellow (5 V) |
 
    Common ground is mandatory. Never try to power the AC board from the USB adapter. If your adapter or MCU is 3.3 V-only, insert a level shifter between it and the harness (see the note above).
-5. **Mount the Pi.** Tuck the Pi Zero 2W and the USB-TTL adapter into the cavity behind the panel, or in a small project box nearby. Power the Pi from its own 5 V PSU; only share GND with the AC wiring.
+5. **Mount the Pi and wire its power.** Tuck the Pi Zero 2W and the USB-TTL adapter into the cavity behind the panel, or in a small project box nearby. For power, I used a Hi-Link HLK-PM01 AC-DC module: its AC input is tapped into the 120 V line going into the indoor unit (hot + neutral), and its 5 V output powers the Pi via header pins 4 (5 V) and 6 (GND). Since the module is primary-side isolated, tie its GND output to the harness GND (white wire) so the Pi, USB adapter, and AC board all share a common ground. This is a live 120 V connection — use proper insulation/wire nuts, and pick a module whose current rating covers the Pi's peaks (WiFi bursts can draw over 1 A).
 6. **Restore power.** The AC keeps running without the WiFi module, and on most units the IR remote still works because it talks directly to the main board — so you aren't bricked if the bridge misbehaves.
 
 ## 2. Setting up the Raspberry Pi Zero 2W
