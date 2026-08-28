@@ -5,5 +5,7 @@
   "mqtt_port": 1883,
   "mqtt_user": "your_mqtt_user",
   "mqtt_pass": "your_mqtt_password",
-  "mqtt_topic_prefix": "Zokop-MiniSplit-LivingRoom"
+  "mqtt_topic_prefix": "Zokop-MiniSplit-LivingRoom",
+  "debug": false,
+  "capture_dps": false
 }

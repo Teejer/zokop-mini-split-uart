@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AC MQTT Bridge for A5 UART protocol with config file, HA discovery, and Pi restart."""
+"""AC MQTT Bridge for A5 UART protocol - with config file, HA discovery, debug mode, and Pi restart."""
 
 import serial
 import time
@@ -9,7 +9,7 @@ import sys
 import subprocess
 import paho.mqtt.client as mqtt
 
-# =============== DEFAULT CONFIG ===============
+# =============== DEFAULT CONFIG (overridden by config file) ===============
 DEFAULTS = {
     "serial_port": "/dev/ttyUSB0",
     "baud_rate": 115200,
@@ -18,6 +18,8 @@ DEFAULTS = {
     "mqtt_user": None,
     "mqtt_pass": None,
     "mqtt_topic_prefix": "Zokop-MiniSplit-SmallBedroom",
+    "debug": False,
+    "capture_dps": False,
 }
 
 def load_config(path=None):
@@ -42,6 +44,8 @@ MQTT_PORT = CONFIG["mqtt_port"]
 MQTT_USER = CONFIG["mqtt_user"]
 MQTT_PASS = CONFIG["mqtt_pass"]
 MQTT_TOPIC_PREFIX = CONFIG["mqtt_topic_prefix"]
+DEBUG = CONFIG.get("debug", False)
+CAPTURE_DPS = CONFIG.get("capture_dps", False) or DEBUG
 
 STATUS_PING_INTERVAL = 60
 
@@ -124,7 +128,7 @@ DP_NAMES = {
     0x22: "sleep",
     0x25: "beep",
     0x27: "temp_F",
-    0x73: "led_display",
+    0x73: "led_display",   # placeholder – likely fan auto flag
 }
 
 def format_dp_value(dp, val):
@@ -145,30 +149,41 @@ def format_dp_value(dp, val):
     if dp == 0x27:
         if 61 <= val <= 88: return str(val)
         return None
-    if dp == 0x73: return "on" if val else "off"
+    if dp == 0x73: return "on" if val else "off"   # placeholder
     return str(val)
 
-def parse_state_frame(frame):
-    if len(frame) < 12: return None
+def parse_state_frame(frame, debug=False):
+    if len(frame) < 12: return None, None
     payload = frame[10:]
-    if not payload.startswith(b"\x0c\x0c"): return None
+    if not payload.startswith(b"\x0c\x0c"): return None, None
     data = payload[2:]
     i = 0
     state = {}
+    raw_dps = {}
     while i < len(data):
         typ = data[i]
-        if typ not in (0x00,0x01,0x02): break
+        if typ not in (0x00,0x01,0x02):
+            if debug:
+                print(f"  STOP parsing at offset {i}: unknown type byte 0x{typ:02X}, {len(data)-i} bytes left")
+            break
         if i+1 >= len(data): break
         dp = data[i+1]
         vlen = 1 if typ == 0x00 else (2 if typ == 0x01 else 4)
-        if i+2+vlen > len(data): break
+        if i+2+vlen > len(data):
+            if debug:
+                print(f"  TRUNCATED dp 0x{dp:02X}")
+            break
         val = int.from_bytes(data[i+2:i+2+vlen], "big")
+        name = DP_NAMES.get(dp, "UNKNOWN")
+        if debug:
+            print(f"  DP 0x{dp:02X} ({name}) type={typ} val={val}")
+        raw_dps[f"0x{dp:02X}"] = val
         if dp in DP_NAMES:
             formatted = format_dp_value(dp, val)
             if formatted is not None:
                 state[DP_NAMES[dp]] = formatted
         i += 2+vlen
-    return state if state else None
+    return (state if state else None), (raw_dps if raw_dps else None)
 
 # =============== BRIDGE CLASS ===============
 class ACBridge:
@@ -177,6 +192,8 @@ class ACBridge:
         self.seq = 0
         self.rx_buffer = b""
         self.state = {}
+        self.debug = DEBUG   # or CONFIG.get("debug", False)
+        self.seen_dps = set()
 
     def extract_frames(self, data):
         frames = []
@@ -209,14 +226,35 @@ class ACBridge:
             expected = (frame[8] << 8) | frame[9]
             payload = frame[10:]
             calc = crc16_xmodem(frame[:8] + payload)
-            if calc != expected: continue
-            if frame[3] == 0x21:
-                state = parse_state_frame(frame)
+            if calc != expected:
+                if self.debug:
+                    print(f"CRC MISMATCH: expected 0x{expected:04X} calc 0x{calc:04X} frame: {frame.hex(' ').upper()}")
+                continue
+
+            if self.debug:
+                print(f"RX frame ({len(frame)}): {frame.hex(' ').upper()}")
+
+            if frame[3] in (0x21, 0x23):
+                state, raw_dps = parse_state_frame(frame, self.debug)
+                if raw_dps and CAPTURE_DPS:
+                    self.report_raw_dps(raw_dps, frame)
                 if state:
                     self.state.update(state)
                     self.publish_state()
-            elif frame[3] == 0x23:
-                self.publish_state()
+                if frame[3] == 0x23:
+                    self.publish_state()
+            elif self.debug:
+                print(f"RX unhandled frame cmd=0x{frame[3]:02X}: {frame.hex(' ').upper()}")
+
+    def report_raw_dps(self, raw_dps, frame):
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/debug/dps",
+            json.dumps(raw_dps), retain=True,
+        )
+        for key, val in raw_dps.items():
+            if key not in self.seen_dps:
+                self.seen_dps.add(key)
+                print(f"NEW DP {key} = {val}   frame: {frame.hex(' ').upper()}")
 
     def publish_state(self):
         for key, value in self.state.items():
@@ -274,6 +312,7 @@ class ACBridge:
             return True
 
         if parts[0] == "led" and parts[1] == "display":
+            # Not confirmed – use dynamic DP 0x73 for now
             self.send_dynamic_dp(0x73, 1 if parts[2] == "on" else 0)
             return True
 
@@ -418,7 +457,7 @@ def publish_discovery(client):
     client.publish(f"homeassistant/switch/{obj_id}_beep/config", json.dumps(beep_switch), retain=True)
     print(f"Published beep switch discovery for {obj_id}")
 
-    # LED Display switch
+    # LED Display switch (placeholder - might not work until correct DP is found)
     led_display_switch_config = {
         "name": "LED Display",
         "unique_id": f"{obj_id}_led_display",
@@ -535,6 +574,8 @@ if __name__ == "__main__":
         MQTT_USER = CONFIG["mqtt_user"]
         MQTT_PASS = CONFIG["mqtt_pass"]
         MQTT_TOPIC_PREFIX = CONFIG["mqtt_topic_prefix"]
+        DEBUG = CONFIG.get("debug", False)
+        CAPTURE_DPS = CONFIG.get("capture_dps", False) or DEBUG
 
     bridge = ACBridge()
 
