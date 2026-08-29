@@ -116,15 +116,18 @@ Raspbian 13 (trixie) blocks system-wide pip installs, so the Adafruit libraries 
 
 ```bash
 cd ~/acMqtt   # or wherever this repo lives
-sudo apt install -y python3-venv libgpiod2 gpiod build-essential python3-dev libgpiod-dev
+sudo apt install -y python3-venv libgpiod2 gpiod build-essential python3-dev libgpiod-dev liblgpio-dev swig
 python3 -m venv venv
-venv/bin/pip install adafruit-circuitpython-dht
+venv/bin/pip install adafruit-circuitpython-dht paho-mqtt
 sudo usermod -aG gpio $USER   # re-login afterwards
 ```
 
-> The `build-essential`/`python3-dev`/`libgpiod-dev` packages are needed because the GPIO
-> libraries (`RPi.GPIO`, `lgpio`, `rpi_ws281x`) compile from source on install — without them
-> you'll see `Failed building wheel for RPi.GPIO`.
+> The `build-essential`/`python3-dev`/`libgpiod-dev`/`liblgpio-dev`/`swig` packages are needed
+> because the GPIO libraries (`RPi.GPIO`, `lgpio`, `rpi_ws281x`) compile from source on install —
+> without them you'll see `Failed building wheel for RPi.GPIO`. `lgpio` in particular fails with
+> `error: command 'swig' failed: No such file or directory` unless `swig` is installed, and on
+> trixie (Python 3.13) there is no prebuilt `lgpio` wheel at all — PyPI only ships up to cp312 —
+> so it always builds from source and needs `liblgpio-dev` for the `lgpio.h` headers.
 
 Test it:
 
