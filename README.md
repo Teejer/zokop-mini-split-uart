@@ -116,7 +116,7 @@ Raspbian 13 (trixie) blocks system-wide pip installs, so the Adafruit libraries 
 
 ```bash
 cd ~/acMqtt   # or wherever this repo lives
-sudo apt install -y python3-venv libgpiod2 gpiod build-essential python3-dev libgpiod-dev liblgpio-dev swig
+sudo apt install -y python3-venv gpiod build-essential python3-dev libgpiod-dev liblgpio-dev swig
 python3 -m venv venv
 venv/bin/pip install adafruit-circuitpython-dht paho-mqtt
 sudo usermod -aG gpio $USER   # re-login afterwards
@@ -127,7 +127,9 @@ sudo usermod -aG gpio $USER   # re-login afterwards
 > without them you'll see `Failed building wheel for RPi.GPIO`. `lgpio` in particular fails with
 > `error: command 'swig' failed: No such file or directory` unless `swig` is installed, and on
 > trixie (Python 3.13) there is no prebuilt `lgpio` wheel at all — PyPI only ships up to cp312 —
-> so it always builds from source and needs `liblgpio-dev` for the `lgpio.h` headers.
+> so it always builds from source and needs `liblgpio-dev` for the `lgpio.h` headers. Don't list
+> the libgpiod runtime package by hand — trixie renamed it (`libgpiod2` → `libgpiod2t64`) and it's
+> pulled in automatically as a dependency of `gpiod` and `libgpiod-dev`.
 
 Test it:
 
@@ -193,6 +195,7 @@ All topics use the `mqtt_topic_prefix` from `config.json`:
 | `mqtt_pass` | `...` | Optional broker password |
 | `mqtt_topic_prefix` | `Zokop-MiniSplit-LivingRoom` | Make it unique per unit if you bridge multiple splits |
 | `dht_gpio` | `4` | GPIO (BCM) the DHT22 data pin is on — `ambient_sensor.py` only |
+| `dht_use_pulseio` | `true` | Use blinka's hardware pulse capture. The script auto-falls back to bit-bang if it fails (e.g. trixie + libgpiod 2.x); set `false` to force bit-bang |
 | `ambient_interval_sec` | `60` | How often the DHT22 is read and published |
 
 You can also pass an alternate config file as an argument: `python3 ac_bridge.py /path/to/other.json`.

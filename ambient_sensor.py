@@ -24,6 +24,7 @@ DEFAULTS = {
     "mqtt_pass": None,
     "mqtt_topic_prefix": "Zokop-MiniSplit-SmallBedroom",
     "dht_gpio": 4,
+    "dht_use_pulseio": True,
     "ambient_interval_sec": 60,
     "debug": False,
 }
@@ -49,6 +50,7 @@ MQTT_USER = CONFIG["mqtt_user"]
 MQTT_PASS = CONFIG["mqtt_pass"]
 MQTT_TOPIC_PREFIX = CONFIG["mqtt_topic_prefix"]
 DHT_GPIO = CONFIG["dht_gpio"]
+DHT_USE_PULSEIO = CONFIG.get("dht_use_pulseio", True)
 AMBIENT_INTERVAL = CONFIG["ambient_interval_sec"]
 DEBUG = CONFIG.get("debug", False)
 
@@ -116,6 +118,18 @@ def read_dht(sensor):
             time.sleep(DHT_RETRY_DELAY)
     return None, None
 
+def make_sensor(pin):
+    if DHT_USE_PULSEIO:
+        try:
+            return adafruit_dht.DHT22(pin)
+        except Exception as e:
+            print(
+                f"PulseIn init failed ({e}); using bit-bang (use_pulseio=False). "
+                "This is expected on trixie, where libgpiod 2.x (libgpiod.so.3) can't load "
+                "blinka's libgpiod 1.x helper. Reads are timing-sensitive but the loop retries."
+            )
+    return adafruit_dht.DHT22(pin, use_pulseio=False)
+
 def publish_reading(temp_c, humidity):
     temp_f = temp_c * 9.0 / 5.0 + 32.0
     values = {
@@ -153,11 +167,12 @@ if __name__ == "__main__":
         MQTT_PASS = CONFIG["mqtt_pass"]
         MQTT_TOPIC_PREFIX = CONFIG["mqtt_topic_prefix"]
         DHT_GPIO = CONFIG["dht_gpio"]
+        DHT_USE_PULSEIO = CONFIG.get("dht_use_pulseio", True)
         AMBIENT_INTERVAL = CONFIG["ambient_interval_sec"]
         DEBUG = CONFIG.get("debug", False)
 
     pin = getattr(board, f"D{DHT_GPIO}")
-    sensor = adafruit_dht.DHT22(pin)
+    sensor = make_sensor(pin)
     print(f"Using DHT22 on GPIO {DHT_GPIO}, publishing every {AMBIENT_INTERVAL}s under {MQTT_TOPIC_PREFIX}")
 
     mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=f"{_discovery_object_id(MQTT_TOPIC_PREFIX)}_ambient")
