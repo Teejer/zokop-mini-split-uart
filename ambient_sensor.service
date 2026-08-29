@@ -1,0 +1,13 @@
+[Unit]
+Description=DHT22 Ambient Temp/Humidity MQTT Publisher
+After=network.target
+Wants=ac_bridge.service
+[Service]
+Type=simple
+User=teejer
+WorkingDirectory=/home/teejer/acMqtt
+ExecStart=/home/teejer/acMqtt/venv/bin/python /home/teejer/acMqtt/ambient_sensor.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

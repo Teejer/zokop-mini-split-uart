@@ -362,6 +362,7 @@ def publish_discovery(client):
         "mode_state_topic": f"{MQTT_TOPIC_PREFIX}/state/mode",
         "temperature_command_topic": f"{MQTT_TOPIC_PREFIX}/cmd/temp",
         "temperature_state_topic": f"{MQTT_TOPIC_PREFIX}/state/temp_F",
+        "current_temperature_topic": f"{MQTT_TOPIC_PREFIX}/state/ambient_temp_F",
         "temperature_unit": "F",
         "fan_mode_command_topic": f"{MQTT_TOPIC_PREFIX}/cmd/fan",
         "fan_mode_state_topic": f"{MQTT_TOPIC_PREFIX}/state/fan",

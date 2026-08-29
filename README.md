@@ -11,10 +11,12 @@ Since this is a generic Tuya UART protocol, the same approach — and much of th
 Instead of letting the Tuya module handle the radio, this project:
 
 - **`ac_bridge.py`** — the main bridge. Opens the serial port, publishes AC state to MQTT, accepts commands from MQTT, and auto-publishes Home Assistant MQTT discovery.
+- **`ambient_sensor.py`** — optional companion service. Reads a DHT22 on the Pi's GPIO and publishes ambient temperature + humidity to the same broker, joining the same Home Assistant device as the AC. The temperature also becomes the climate entity's current (ambient) temperature.
 - **`ac_control.py`** — a standalone CLI tool for sending/receiving frames without MQTT (handy for testing wiring).
 - **`config.example.json`** — sample configuration (copy to `config.json` and edit).
 - **`ac_bridge.service`** — systemd unit to run the bridge on boot.
-- **`apply-low-power.sh`** + **`boot-config.txt`** — optional low-power tuning for the Pi Zero 2W.
+- **`ambient_sensor.service`** — systemd unit for the DHT22 ambient sensor service.
+- **`apply-low-power.sh`** + **`boot-config.txt`** / **`boot-config-zero-w.txt`** — optional low-power tuning for a Pi Zero 2W or Zero W.
 - **`protoInfo.txt`** / **`info.txt`** — reverse-engineered protocol notes and wiring references.
 
 ## Parts
@@ -96,19 +98,53 @@ Instead of letting the Tuya module handle the radio, this project:
    You should see `Loaded config`, `Connected to MQTT`, the discovery publishes, and a state frame shortly after (the bridge sends a status ping to request one).
 6. **Run at boot:**
 
-   ```bash
-   sudo cp ac_bridge.service /etc/systemd/system/
-   sudoedit /etc/systemd/system/ac_bridge.service   # fix User= and the paths
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now ac_bridge
-   journalctl -u ac_bridge -f
-   ```
+```bash
+sudo cp ac_bridge.service /etc/systemd/system/
+sudoedit /etc/systemd/system/ac_bridge.service   # fix User= and the paths
+sudo systemctl daemon-reload
+sudo systemctl enable --now ac_bridge
+journalctl -u ac_bridge -f
+```
 
-## 3. Home Assistant
+## 3. DHT22 ambient sensor (optional)
+
+A DHT22 wired to the Pi's GPIO publishes room temperature and humidity as part of the same MQTT device, and the temperature feeds the climate entity's "current temperature".
+
+**Wiring:** VCC → 3.3 V (pin 1 or 17), GND → GND, DATA → the GPIO set by `dht_gpio` in `config.json` (default GPIO 4 / physical pin 7). DHT22 breakout boards usually carry the 10 kΩ pull-up already; for a bare sensor add a 10 kΩ resistor between DATA and VCC.
+
+Raspbian 13 (trixie) blocks system-wide pip installs, so the Adafruit libraries go in a venv:
+
+```bash
+cd ~/acMqtt   # or wherever this repo lives
+sudo apt install -y python3-venv libgpiod2 gpiod
+python3 -m venv venv
+venv/bin/pip install adafruit-circuitpython-dht
+sudo usermod -aG gpio $USER   # re-login afterwards
+```
+
+Test it:
+
+```bash
+venv/bin/python ambient_sensor.py   # Ctrl+C to stop
+```
+
+You should see `Loaded config`, `Connected to MQTT`, the discovery publishes, and a `PUBLISH …/state/ambient_temp_F = …` line every `ambient_interval_sec` seconds. Then install the service (it uses the venv's Python, so the path in `ExecStart=` matters):
+
+```bash
+sudo cp ambient_sensor.service /etc/systemd/system/
+sudoedit /etc/systemd/system/ambient_sensor.service   # fix User= and the paths
+sudo systemctl daemon-reload
+sudo systemctl enable --now ambient_sensor
+journalctl -u ambient_sensor -f
+```
+
+If reads fail, first try again a second later (the sensor needs ~2 s between reads and occasional checksum failures are normal — the script retries), then check wiring and the pull-up resistor.
+
+## 4. Home Assistant
 
 The bridge publishes MQTT discovery on every connect. With an MQTT integration in Home Assistant pointing at the same broker (same user/password), these entities appear automatically:
 
-- **Climate** (Mini Split AC) — modes auto/cool/dry/fan/heat, temperature 61–88 °F, fan speeds
+- **Climate** (Mini Split AC) — modes auto/cool/dry/fan/heat, temperature 61–88 °F, fan speeds; with `ambient_sensor.py` running, its DHT22 reading shows as the climate's current temperature
 - **Power** switch
 - **Fan Speed** select (auto, mute, low, mid_low, mid, mid_high, high, extra_high)
 - **Horizontal Louver** select
@@ -117,6 +153,7 @@ The bridge publishes MQTT discovery on every connect. With an MQTT integration i
 - **Beep** switch
 - **LED Display** switch
 - **Restart Pi** switch (sends `ON` to reboot the Pi)
+- **Ambient Temperature** / **Ambient Humidity** sensors (from `ambient_sensor.py`, same device)
 
 ### MQTT topics
 
@@ -133,8 +170,9 @@ All topics use the `mqtt_topic_prefix` from `config.json`:
 | cmd | `{prefix}/cmd/beep`, `{prefix}/cmd/led_display` | `on` / `off` |
 | cmd | `{prefix}/cmd/restart_pi` | `ON` |
 | state | `{prefix}/state/…` | `power`, `mode`, `fan`, `temp_F`, `h_louver`, `v_louver`, `sleep`, `beep`, `led_display` |
+| state | `{prefix}/state/ambient_temp_F`, `/ambient_temp_C`, `/humidity` | from `ambient_sensor.py` (°F, °C, %) |
 
-## 4. Configuration
+## 5. Configuration
 
 `config.json` (copy from `config.example.json`; it's gitignored so it never leaves your machine):
 
@@ -147,17 +185,24 @@ All topics use the `mqtt_topic_prefix` from `config.json`:
 | `mqtt_user` | `hass` | Optional broker user |
 | `mqtt_pass` | `...` | Optional broker password |
 | `mqtt_topic_prefix` | `Zokop-MiniSplit-LivingRoom` | Make it unique per unit if you bridge multiple splits |
+| `dht_gpio` | `4` | GPIO (BCM) the DHT22 data pin is on — `ambient_sensor.py` only |
+| `ambient_interval_sec` | `60` | How often the DHT22 is read and published |
 
 You can also pass an alternate config file as an argument: `python3 ac_bridge.py /path/to/other.json`.
 
-## 5. Low power (optional)
+## 6. Low power (optional)
 
-`boot-config.txt` and `apply-low-power.sh` tune a headless Pi Zero 2W for minimal draw: undervolting (`arm_freq=600`, `over_voltage=-1`), disabling BT/I2C/SPI/audio/camera, blacklisting unused kernel modules, and stopping unneeded services (bluetooth, avahi, cups, …).
+`boot-config.txt` / `boot-config-zero-w.txt` and `apply-low-power.sh` tune a headless Pi Zero for minimal draw: undervolting (`arm_freq=600`, `over_voltage=-3`), disabling BT/I2C/SPI/audio/camera, blacklisting unused kernel modules, and stopping unneeded services (bluetooth, avahi, cups, …).
 
-1. Copy `boot-config.txt` to `/boot/firmware/config.txt` (replacing or merging with the existing file):
+- **Pi Zero 2W** → `boot-config.txt`
+- **Pi Zero W** → `boot-config-zero-w.txt`. Don't use the 2W file: `core_freq` below 250 is unsafe on the Zero W's BCM2835 (the SD card clock derives from it — corruption risk); the Zero 2W's BCM2710 auto-clamps it, which is why the 2W file can use 200. `apply-low-power.sh` works unchanged on both.
+- Raspberry Pi OS 13 (trixie) has no build for the Zero W (ARMv6 dropped), so those boards stay on Bookworm — everything in this project works the same there.
+
+1. Copy the config for your board to `/boot/firmware/config.txt` (replacing or merging with the existing file; on pre-Bullseye Raspbian the boot partition is `/boot`):
 
    ```bash
-   sudo cp boot-config.txt /boot/firmware/config.txt
+   sudo cp boot-config.txt /boot/firmware/config.txt           # Zero 2W
+   sudo cp boot-config-zero-w.txt /boot/firmware/config.txt    # Zero W
    ```
 2. `sudo bash apply-low-power.sh`, then reboot.
 

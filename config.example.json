@@ -7,5 +7,7 @@
   "mqtt_pass": "your_mqtt_password",
   "mqtt_topic_prefix": "Zokop-MiniSplit-LivingRoom",
   "debug": false,
-  "capture_dps": false
+  "capture_dps": false,
+  "dht_gpio": 4,
+  "ambient_interval_sec": 60
 }
