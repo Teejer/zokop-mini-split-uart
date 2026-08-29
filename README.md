@@ -116,11 +116,15 @@ Raspbian 13 (trixie) blocks system-wide pip installs, so the Adafruit libraries 
 
 ```bash
 cd ~/acMqtt   # or wherever this repo lives
-sudo apt install -y python3-venv libgpiod2 gpiod
+sudo apt install -y python3-venv libgpiod2 gpiod build-essential python3-dev libgpiod-dev
 python3 -m venv venv
 venv/bin/pip install adafruit-circuitpython-dht
 sudo usermod -aG gpio $USER   # re-login afterwards
 ```
+
+> The `build-essential`/`python3-dev`/`libgpiod-dev` packages are needed because the GPIO
+> libraries (`RPi.GPIO`, `lgpio`, `rpi_ws281x`) compile from source on install — without them
+> you'll see `Failed building wheel for RPi.GPIO`.
 
 Test it:
 
