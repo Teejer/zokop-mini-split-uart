@@ -31,3 +31,16 @@ camera_auto_detect=0
 # ── Misc ─────────────────────────────────────────────────────────
 loglevel=1
 quiet
+
+# ── DHT ambient sensor (iio method) ──────────────────────────────
+# Userspace bit-banging (Adafruit/blinka) is unreliable on the Zero W's
+# single-core BCM2835. Use the in-kernel dht11 IIO driver instead:
+# uncomment below and set "dht_method": "iio" in config.json.
+# The pin must match "dht_gpio". The modules don't always autoload from
+# the overlay, so also load them at boot:
+#   sudo modprobe industrialio && sudo modprobe dht11
+#   printf 'industrialio\ndht11\n' | sudo tee /etc/modules-load.d/dht11.conf
+# Verify after reboot with:
+#   dmesg | grep -i dht    and    ls /sys/bus/iio/devices/
+# Requires kernel >= 6.6 with CONFIG_IIO_DHT11 (modules industrialio + dht11).
+# dtoverlay=dht11,gpio_pin=4

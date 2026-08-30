@@ -5,15 +5,22 @@ Runs as a separate service alongside ac_bridge.py, using the same config.json,
 MQTT broker, and topic prefix. Publishes Home Assistant discovery for ambient
 temperature and humidity sensors that attach to the same HA device as the AC
 entities (same device identifiers as ac_bridge.py's discovery).
+
+Two read methods, selected with "dht_method" in config.json:
+  "gpio" (default) — Adafruit CircuitPython bit-bang/PulseIO capture on the
+      GPIO pin. Works well on the Pi Zero 2W.
+  "iio" — in-kernel dht11 driver via "dtoverlay=dht11,gpio_pin=N", reading
+      /sys/bus/iio/devices/iio:deviceN. Recommended on the original Pi Zero W,
+      where userspace timing is too unreliable on the single-core BCM2835.
 """
 
 import time
 import json
 import re
 import sys
+import os
+import glob
 
-import board
-import adafruit_dht
 import paho.mqtt.client as mqtt
 
 # =============== DEFAULT CONFIG (overridden by config file) ===============
@@ -23,8 +30,10 @@ DEFAULTS = {
     "mqtt_user": None,
     "mqtt_pass": None,
     "mqtt_topic_prefix": "Zokop-MiniSplit-SmallBedroom",
+    "dht_method": "gpio",
     "dht_gpio": 4,
     "dht_use_pulseio": True,
+    "dht_iio_device": "auto",
     "ambient_interval_sec": 60,
     "debug": False,
 }
@@ -49,12 +58,14 @@ MQTT_PORT = CONFIG["mqtt_port"]
 MQTT_USER = CONFIG["mqtt_user"]
 MQTT_PASS = CONFIG["mqtt_pass"]
 MQTT_TOPIC_PREFIX = CONFIG["mqtt_topic_prefix"]
+DHT_METHOD = CONFIG.get("dht_method", "gpio")
 DHT_GPIO = CONFIG["dht_gpio"]
 DHT_USE_PULSEIO = CONFIG.get("dht_use_pulseio", True)
+DHT_IIO_DEVICE = CONFIG.get("dht_iio_device", "auto")
 AMBIENT_INTERVAL = CONFIG["ambient_interval_sec"]
 DEBUG = CONFIG.get("debug", False)
 
-DHT_READ_RETRIES = 3
+DHT_READ_RETRIES = 5
 DHT_RETRY_DELAY = 2.1  # DHT22 needs ~2s between reads
 
 last_reading = {}
@@ -118,7 +129,73 @@ def read_dht(sensor):
             time.sleep(DHT_RETRY_DELAY)
     return None, None
 
-def make_sensor(pin):
+
+def find_iio_device_dir():
+    for dev_dir in sorted(glob.glob("/sys/bus/iio/devices/iio:device*")):
+        try:
+            with open(os.path.join(dev_dir, "name"), "r") as f:
+                name = f.read().strip()
+        except OSError:
+            continue
+        if DHT_IIO_DEVICE and DHT_IIO_DEVICE != "auto":
+            if DHT_IIO_DEVICE in (os.path.basename(dev_dir), name):
+                return dev_dir
+        elif name.lower().startswith("dht"):
+            return dev_dir
+    raise RuntimeError(
+        f"No DHT IIO device found under /sys/bus/iio/devices. "
+        f"Add 'dtoverlay=dht11,gpio_pin={DHT_GPIO}' to /boot/firmware/config.txt, "
+        f"load the modules ('sudo modprobe industrialio dht11', persist via "
+        f"/etc/modules-load.d/dht11.conf), reboot, and confirm with 'dmesg | grep -i dht' "
+        f"(needs kernel >= 6.6 with CONFIG_IIO_DHT11)."
+    )
+
+
+class IioDht:
+    """DHT sensor exposed by the in-kernel dht11 driver via IIO sysfs."""
+
+    def __init__(self):
+        self.dev_dir = find_iio_device_dir()
+        with open(os.path.join(self.dev_dir, "name"), "r") as f:
+            self.name = f.read().strip()
+
+    def _read_attr(self, attr, default=None):
+        try:
+            with open(os.path.join(self.dev_dir, attr), "r") as f:
+                return float(f.read().strip())
+        except (OSError, ValueError):
+            return default
+
+    @property
+    def temperature(self):
+        raw = self._read_attr("in_temp_input")
+        if raw is None:
+            raise RuntimeError(f"in_temp_input read failed on {self.dev_dir}")
+        # dht11.c reports millidegrees C and exposes no in_temp_scale file
+        return raw * self._read_attr("in_temp_scale", 0.001)
+
+    @property
+    def humidity(self):
+        raw = self._read_attr("in_humidityrelative_input")
+        if raw is None:
+            raise RuntimeError(f"in_humidityrelative_input read failed on {self.dev_dir}")
+        # dht11.c reports milli-percent and exposes no in_humidityrelative_scale file
+        return raw * self._read_attr("in_humidityrelative_scale", 0.001)
+
+    def exit(self):
+        pass
+
+
+def make_sensor():
+    if DHT_METHOD == "iio":
+        return IioDht()
+    if DHT_METHOD != "gpio":
+        raise RuntimeError(f"Unknown dht_method '{DHT_METHOD}' (use \"gpio\" or \"iio\")")
+
+    import board
+    import adafruit_dht
+
+    pin = getattr(board, f"D{DHT_GPIO}")
     if DHT_USE_PULSEIO:
         try:
             return adafruit_dht.DHT22(pin)
@@ -166,14 +243,21 @@ if __name__ == "__main__":
         MQTT_USER = CONFIG["mqtt_user"]
         MQTT_PASS = CONFIG["mqtt_pass"]
         MQTT_TOPIC_PREFIX = CONFIG["mqtt_topic_prefix"]
+        DHT_METHOD = CONFIG.get("dht_method", "gpio")
         DHT_GPIO = CONFIG["dht_gpio"]
         DHT_USE_PULSEIO = CONFIG.get("dht_use_pulseio", True)
+        DHT_IIO_DEVICE = CONFIG.get("dht_iio_device", "auto")
         AMBIENT_INTERVAL = CONFIG["ambient_interval_sec"]
         DEBUG = CONFIG.get("debug", False)
 
-    pin = getattr(board, f"D{DHT_GPIO}")
-    sensor = make_sensor(pin)
-    print(f"Using DHT22 on GPIO {DHT_GPIO}, publishing every {AMBIENT_INTERVAL}s under {MQTT_TOPIC_PREFIX}")
+    sensor = make_sensor()
+    if DHT_METHOD == "iio":
+        print(
+            f"Using {sensor.name} via IIO ({sensor.dev_dir}), "
+            f"publishing every {AMBIENT_INTERVAL}s under {MQTT_TOPIC_PREFIX}"
+        )
+    else:
+        print(f"Using DHT22 on GPIO {DHT_GPIO} (gpio method), publishing every {AMBIENT_INTERVAL}s under {MQTT_TOPIC_PREFIX}")
 
     mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=f"{_discovery_object_id(MQTT_TOPIC_PREFIX)}_ambient")
     if MQTT_USER:

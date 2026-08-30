@@ -9,6 +9,8 @@
   "debug": false,
   "capture_dps": false,
   "dht_gpio": 4,
+  "dht_method": "gpio",
   "dht_use_pulseio": true,
+  "dht_iio_device": "auto",
   "ambient_interval_sec": 60
 }

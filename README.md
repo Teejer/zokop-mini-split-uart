@@ -11,7 +11,7 @@ Since this is a generic Tuya UART protocol, the same approach — and much of th
 Instead of letting the Tuya module handle the radio, this project:
 
 - **`ac_bridge.py`** — the main bridge. Opens the serial port, publishes AC state to MQTT, accepts commands from MQTT, and auto-publishes Home Assistant MQTT discovery.
-- **`ambient_sensor.py`** — optional companion service. Reads a DHT22 on the Pi's GPIO and publishes ambient temperature + humidity to the same broker, joining the same Home Assistant device as the AC. The temperature also becomes the climate entity's current (ambient) temperature.
+- **`ambient_sensor.py`** — optional companion service. Reads a DHT22 (via GPIO bit-bang, or the kernel `dht11` IIO overlay on a Pi Zero W) and publishes ambient temperature + humidity to the same broker, joining the same Home Assistant device as the AC. The temperature also becomes the climate entity's current (ambient) temperature.
 - **`ac_control.py`** — a standalone CLI tool for sending/receiving frames without MQTT (handy for testing wiring).
 - **`config.example.json`** — sample configuration (copy to `config.json` and edit).
 - **`ac_bridge.service`** — systemd unit to run the bridge on boot.
@@ -149,6 +149,50 @@ journalctl -u ambient_sensor -f
 
 If reads fail, first try again a second later (the sensor needs ~2 s between reads and occasional checksum failures are normal — the script retries), then check wiring and the pull-up resistor.
 
+### Pi Zero W: kernel `dht11` overlay instead of blinka
+
+On the original Pi Zero W the single-core BCM2835 can't do the userspace bit-bang timing reliably (and blinka's PulseIO helper doesn't work there at all). Use the in-kernel DHT driver, which samples in interrupt context and exposes the readings through IIO:
+
+1. Add to `/boot/firmware/config.txt` (see `boot-config-zero-w.txt`):
+
+   ```
+   dtoverlay=dht11,gpio_pin=4     # must match dht_gpio in config.json
+   ```
+
+2. Load the IIO core and the DHT driver (they ship as modules and don't always
+   autoload from the overlay):
+
+   ```bash
+   sudo modprobe industrialio
+   sudo modprobe dht11
+   ```
+
+   Make it persistent across reboots:
+
+   ```bash
+   printf 'industrialio\ndht11\n' | sudo tee /etc/modules-load.d/dht11.conf
+   ```
+
+3. Reboot and confirm the device exists:
+
+   ```bash
+   dmesg | grep -i dht
+   ls /sys/bus/iio/devices/          # expect iio:deviceN with name "dht11"
+   cat /sys/bus/iio/devices/iio:device*/in_temp_input
+   ```
+
+   Needs kernel ≥ 6.6 with `CONFIG_IIO_DHT11` (module `dht11`) — stock on current
+   Raspberry Pi OS kernels. If no IIO device appears after the modules load, the
+   running kernel lacks the driver and you'll need a newer kernel.
+
+4. Set `"dht_method": "iio"` in `config.json`. No venv, no pip packages, and no pull-up
+   concerns beyond the usual: the script just reads the sysfs files (the overlay's
+   `dht11` model reports integer degrees; readings are otherwise identical).
+
+   ```bash
+   python3 ambient_sensor.py    # plain python3 works — only paho-mqtt is needed
+   ```
+
 ## 4. Home Assistant
 
 The bridge publishes MQTT discovery on every connect. With an MQTT integration in Home Assistant pointing at the same broker (same user/password), these entities appear automatically:
@@ -194,8 +238,10 @@ All topics use the `mqtt_topic_prefix` from `config.json`:
 | `mqtt_user` | `hass` | Optional broker user |
 | `mqtt_pass` | `...` | Optional broker password |
 | `mqtt_topic_prefix` | `Zokop-MiniSplit-LivingRoom` | Make it unique per unit if you bridge multiple splits |
+| `dht_method` | `gpio` | `gpio` = Adafruit/blinka userspace reads (Pi Zero 2W); `iio` = in-kernel `dht11` overlay via `/sys/bus/iio` (Pi Zero W — blinka timing is unreliable on the BCM2835) |
 | `dht_gpio` | `4` | GPIO (BCM) the DHT22 data pin is on — `ambient_sensor.py` only |
-| `dht_use_pulseio` | `true` | Use blinka's hardware pulse capture. The script auto-falls back to bit-bang if it fails (e.g. trixie + libgpiod 2.x); set `false` to force bit-bang |
+| `dht_use_pulseio` | `true` | `gpio` method only: use blinka's hardware pulse capture. The script auto-falls back to bit-bang if it fails (e.g. trixie + libgpiod 2.x); set `false` to force bit-bang |
+| `dht_iio_device` | `auto` | `iio` method only: IIO device (`name` or `iio:deviceN`) to read; `auto` picks the first device whose name starts with `dht` |
 | `ambient_interval_sec` | `60` | How often the DHT22 is read and published |
 
 You can also pass an alternate config file as an argument: `python3 ac_bridge.py /path/to/other.json`.
